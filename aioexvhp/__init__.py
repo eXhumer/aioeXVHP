@@ -19,9 +19,17 @@ __default_user_agent__ = f"{__package__}/{__version__}"
 JUSTSTREAMLIVE_API_URL = "https://api.juststream.live"
 JUSTSTREAMLIVE_URL = "https://juststream.live"
 MIXTURE_URL = "https://mixture.gg"
+STREAMFF_URL = "https://streamff.com"
+STREAMJA_URL = "https://streamja.com"
 
 JUSTSTREAMLIVE_UPLOAD_ENDPOINT = "videos/upload"
 MIXTURE_UPLOAD_ENDPOINT = "upload_file.php"
+STREAMFF_GENERATE_LINK_ENDPOINT = "api/videos/generate-link"
+STREAMJA_SHORT_ID_ENDPOINT = "shortId.php"
+STREAMJA_UPLOAD_ENDPOINT = "upload.php"
+STREAMFF_VIDEO_ENDPOINT = "api/videos/{video_id}"
 
 JUSTSTREAMLIVE_UPLOAD_MAX_SIZE = 200 * 1024 * 1024
 MIXTURE_UPLOAD_MAX_SIZE = 512 * 1024 * 1024
+STREAMFF_UPLOAD_MAX_SIZE = 200 * 1024 * 1024
+STREAMJA_UPLOAD_MAX_SIZE = 30 * 1024 * 1024

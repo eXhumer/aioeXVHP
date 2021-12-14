@@ -18,7 +18,7 @@ from typing import Union
 from pydantic import BaseModel, HttpUrl, validator
 from aiohttp import StreamReader
 
-from . import JUSTSTREAMLIVE_URL, MIXTURE_URL
+from . import JUSTSTREAMLIVE_URL, MIXTURE_URL, STREAMFF_URL, STREAMJA_URL
 
 
 class JustStreamLiveUploadModel(BaseModel):
@@ -34,6 +34,26 @@ class MixtureUploadModel(BaseModel):
     filename: str
     filesize: int
     link_id: str
+    stream: Union[BytesIO, BufferedReader, StreamReader]
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class StreamffUploadModel(BaseModel):
+    filename: str
+    filesize: int
+    id: str
+    stream: Union[BytesIO, BufferedReader, StreamReader]
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class StreamjaUploadModel(BaseModel):
+    filename: str
+    filesize: int
+    short_id: str
     stream: Union[BytesIO, BufferedReader, StreamReader]
 
     class Config:
@@ -56,3 +76,26 @@ class MixtureSuccessfulUploadModel(BaseModel):
     @validator("url", pre=True, always=True)
     def url_validator(cls, v, values, **kwargs):
         return f"{MIXTURE_URL}/v/{values['link_id']}"
+
+
+class StreamffSuccessfulUploadModel(BaseModel):
+    id: str
+    url: HttpUrl = None
+
+    @validator("url", pre=True, always=True)
+    def url_validator(cls, v, values, **kwargs):
+        return f"{STREAMFF_URL}/v/{values['id']}"
+
+
+class StreamjaSuccessfulUploadModel(BaseModel):
+    short_id: str
+    url: HttpUrl = None
+    embed_url: HttpUrl = None
+
+    @validator("url", pre=True, always=True)
+    def url_validator(cls, v, values, **kwargs):
+        return f"{STREAMJA_URL}/{values['short_id']}"
+
+    @validator("embed_url", pre=True, always=True)
+    def embed_url_validator(cls, v, values, **kwargs):
+        return f"{STREAMJA_URL}/embed/{values['short_id']}"

@@ -4,6 +4,8 @@ Asynchronous Python library for managing videos hosted from various supported vi
 ## Supported Platforms
 * JustStreamLive
 * Mixture
+* Streamff
+* Streamja
 
 ## Package Installation Guide
 ### Requires
