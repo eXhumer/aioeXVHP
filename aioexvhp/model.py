@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from io import BytesIO, BufferedReader
-from typing import Union
+from typing import Optional, Union
 
 from pydantic import BaseModel, HttpUrl, validator
 from aiohttp import StreamReader
@@ -21,7 +21,7 @@ from aiohttp import StreamReader
 from . import JUSTSTREAMLIVE_URL, MIXTURE_URL, STREAMFF_URL, STREAMJA_URL
 
 
-class JustStreamLiveUploadModel(BaseModel):
+class JustStreamLiveUploadData(BaseModel):
     filename: str
     filesize: int
     stream: Union[BytesIO, BufferedReader, StreamReader]
@@ -30,7 +30,7 @@ class JustStreamLiveUploadModel(BaseModel):
         arbitrary_types_allowed = True
 
 
-class MixtureUploadModel(BaseModel):
+class MixtureUploadData(BaseModel):
     filename: str
     filesize: int
     link_id: str
@@ -40,7 +40,7 @@ class MixtureUploadModel(BaseModel):
         arbitrary_types_allowed = True
 
 
-class StreamffUploadModel(BaseModel):
+class StreamffUploadData(BaseModel):
     filename: str
     filesize: int
     id: str
@@ -50,7 +50,7 @@ class StreamffUploadModel(BaseModel):
         arbitrary_types_allowed = True
 
 
-class StreamjaUploadModel(BaseModel):
+class StreamjaUploadData(BaseModel):
     filename: str
     filesize: int
     short_id: str
@@ -60,7 +60,7 @@ class StreamjaUploadModel(BaseModel):
         arbitrary_types_allowed = True
 
 
-class JustStreamLiveSuccessfulUploadModel(BaseModel):
+class JustStreamLiveSuccessfulUploadData(BaseModel):
     id: str
     url: HttpUrl = None
 
@@ -69,7 +69,7 @@ class JustStreamLiveSuccessfulUploadModel(BaseModel):
         return f"{JUSTSTREAMLIVE_URL}/{values['id']}"
 
 
-class MixtureSuccessfulUploadModel(BaseModel):
+class MixtureSuccessfulUploadData(BaseModel):
     link_id: str
     url: HttpUrl = None
 
@@ -78,7 +78,7 @@ class MixtureSuccessfulUploadModel(BaseModel):
         return f"{MIXTURE_URL}/v/{values['link_id']}"
 
 
-class StreamffSuccessfulUploadModel(BaseModel):
+class StreamffSuccessfulUploadData(BaseModel):
     id: str
     url: HttpUrl = None
 
@@ -87,7 +87,7 @@ class StreamffSuccessfulUploadModel(BaseModel):
         return f"{STREAMFF_URL}/v/{values['id']}"
 
 
-class StreamjaSuccessfulUploadModel(BaseModel):
+class StreamjaSuccessfulUploadData(BaseModel):
     short_id: str
     url: HttpUrl = None
     embed_url: HttpUrl = None
@@ -99,3 +99,26 @@ class StreamjaSuccessfulUploadModel(BaseModel):
     @validator("embed_url", pre=True, always=True)
     def embed_url_validator(cls, v, values, **kwargs):
         return f"{STREAMJA_URL}/embed/{values['short_id']}"
+
+
+class StreamableAWSUploadCredentials(BaseModel):
+    accessKeyId: str
+    secretAccessKey: str
+    sessionToken: str
+
+
+class StreamableTranscoderOptions(BaseModel):
+    token: str
+
+
+class StreamableUploadCredentials(BaseModel):
+    shortcode: str
+    credentials: StreamableAWSUploadCredentials
+    transcoder_options: StreamableTranscoderOptions
+
+
+class StreamableUploadMetadata(BaseModel):
+    shortcode: str
+    filename: str
+    filesize: str
+    title: Optional[str] = None
