@@ -40,6 +40,7 @@ from . import (
     STREAMABLE_GENERATE_SHORTCODE_ENDPOINT,
     STREAMABLE_REACT_VERSION,
     STREAMABLE_TRANSCODE_VIDEO_ENDPOINT,
+    STREAMABLE_UPLOAD_MAX_SIZE,
     STREAMABLE_URL,
     STREAMABLE_VIDEO_ENDPOINT,
     STREAMFF_GENERATE_LINK_ENDPOINT,
@@ -461,8 +462,8 @@ class Client:
 
     async def upload_to_juststreamlive(self,
                                        upload_data: JustStreamLiveUploadData):
-        assert upload_data.filename.endswith(".mp4"), \
-            "JustStreamLive supports MP4 files only!"
+        assert upload_data.filename.endswith((".mkv", ".mp4")), \
+            "JustStreamLive supports MKV/MP4 files only!"
 
         assert upload_data.filesize <= JUSTSTREAMLIVE_UPLOAD_MAX_SIZE, \
             "JustStreamLive supports " + \
@@ -515,6 +516,13 @@ class Client:
         return MixtureVideo(link_id=upload_data.link_id)
 
     async def upload_to_streamable(self, upload_data: StreamableUploadData):
+        assert upload_data.filename.endswith((".mkv", ".mp4")), \
+            "Streamable supports MKV/MP4 files only!"
+
+        assert upload_data.filesize <= STREAMABLE_UPLOAD_MAX_SIZE, \
+            "Streamable supports " + \
+            f"{STREAMABLE_UPLOAD_MAX_SIZE / 0x100000}MB maximum!"
+
         upload_creds = await self.__generate_streamable_shortcode(
             upload_data.filesize,
         )
