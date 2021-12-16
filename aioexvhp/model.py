@@ -96,7 +96,7 @@ class StreamableVideo(BaseModel):
 
     @validator("url", pre=True, always=True)
     def url_validator(cls, v, values, **kwargs):
-        return f"{STREAMABLE_URL}/{values['short_id']}"
+        return f"{STREAMABLE_URL}/{values['shortcode']}"
 
 
 class StreamffUploadData(BaseModel):

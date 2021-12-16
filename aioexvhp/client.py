@@ -98,10 +98,6 @@ class Client:
             await self.__session.close()
 
     @staticmethod
-    def __hmac_sha256_sign(key: bytes, msg: str):
-        return hmac_new(key, msg.encode("utf8"), digestmod=sha256).digest()
-
-    @staticmethod
     def __aws_api_signing_key(
         key_secret: str,
         datestamp: str,
@@ -116,6 +112,10 @@ class Client:
         key_service = Client.__hmac_sha256_sign(key_region, service)
         key_signing = Client.__hmac_sha256_sign(key_service, "aws4_request")
         return key_signing
+
+    @staticmethod
+    def __hmac_sha256_sign(key: bytes, msg: str):
+        return hmac_new(key, msg.encode("utf8"), digestmod=sha256).digest()
 
     @staticmethod
     def __streamable_aws_authorization(
@@ -176,7 +176,7 @@ class Client:
                 sha256(
                     "\n".join((
                         method,
-                        urlencode(uri),
+                        uri,
                         "&".join([f"{qk}:{qv}"
                                   for qk, qv
                                   in query_dict.items()]),
@@ -240,9 +240,12 @@ class Client:
         return await res.text()
 
     async def __generate_streamja_short_id(self) -> str:
+        form_data = FormData()
+        form_data.add_field("new", "1")
+
         res = await self.__session.post(
             f"{STREAMJA_URL}/{STREAMJA_GENERATE_SHORT_ID_ENDPOINT}",
-            data=FormData(fields=(("new", "1")))
+            data=form_data,
         )
         res.raise_for_status()
 
@@ -513,7 +516,7 @@ class Client:
         )
         res.raise_for_status()
 
-        return MixtureVideo(link_id=upload_data.link_id)
+        return MixtureVideo(link_id=link_id)
 
     async def upload_to_streamable(self, upload_data: StreamableUploadData):
         assert upload_data.filename.endswith((".mkv", ".mp4")), \
