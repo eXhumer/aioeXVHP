@@ -19,9 +19,9 @@ from io import BufferedReader, BytesIO, SEEK_SET
 from mimetypes import guess_type
 from pathlib import Path
 from typing import Dict
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
-from aiohttp import ClientSession, FormData, StreamReader
+from aiohttp import ClientSession, FormData
 from aiohttp.hdrs import USER_AGENT
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -52,17 +52,18 @@ from . import (
     STREAMJA_URL,
 )
 from .model import (
-    JustStreamLiveSuccessfulUploadData,
+    JustStreamLiveVideo,
     JustStreamLiveUploadData,
-    MixtureSuccessfulUploadData,
+    MixtureVideo,
     MixtureUploadData,
-    StreamableAWSUploadCredentials,
-    StreamableUploadCredentials,
-    StreamableUploadMetadata,
-    StreamffSuccessfulUploadData,
+    StreamableAWSCredential,
+    StreamableUploadCredential,
+    StreamableUploadData,
+    StreamableVideo,
     StreamffUploadData,
-    StreamjaSuccessfulUploadData,
+    StreamffVideo,
     StreamjaUploadData,
+    StreamjaVideo,
 )
 
 
@@ -87,6 +88,13 @@ class Client:
         )
 
         self.__session = session
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        if not self.__session.closed:
+            await self.__session.close()
 
     @staticmethod
     def __hmac_sha256_sign(key: bytes, msg: str):
@@ -113,16 +121,33 @@ class Client:
         method: str,
         headers: Dict[str, str],
         req_time: datetime,
-        credentials: StreamableAWSUploadCredentials,
+        credential: StreamableAWSCredential,
         uri: str,
-        query: str,
+        query: Dict[str, str],
         region: str,
         service: str = "s3",
     ):
+        method = method.upper()
+        assert method in (
+            "CONNECT",
+            "DELETE",
+            "GET",
+            "HEAD",
+            "OPTIONS",
+            "PATCH",
+            "POST",
+            "PUT",
+            "TRACE",
+        ), "Invalid HTTP method specified!"
+
         headers_dict = {}
+        query_dict = {}
 
         for hk, hv in dict(sorted(headers.items())).items():
-            headers_dict[hk.lower()] = hv
+            headers_dict[hk.lower()] = hv.strip()
+
+        assert "x-amz-content-sha256" in headers_dict, \
+            "Must specify Content SHA256 for AWS request"
 
         algorithm = "AWS4-HMAC-SHA256"
         credential_scope = "/".join([
@@ -133,9 +158,12 @@ class Client:
         ])
         signed_headers = ";".join(headers_dict.keys())
 
+        for qk, qv in dict(sorted(query.items())).items():
+            query_dict[urlencode(qk)] = urlencode(qv)
+
         signature = hmac_new(
             Client.__aws_api_signing_key(
-                credentials.secretAccessKey,
+                credential.secretAccessKey,
                 req_time.strftime("%Y%m%d"),
                 region,
                 service,
@@ -146,9 +174,11 @@ class Client:
                 credential_scope,
                 sha256(
                     "\n".join((
-                        method.upper(),
-                        uri,
-                        query,
+                        method,
+                        urlencode(uri),
+                        "&".join([f"{qk}:{qv}"
+                                  for qk, qv
+                                  in query_dict.items()]),
                         "".join([f"{hk}:{hv}\n"
                                 for hk, hv
                                 in headers_dict.items()]),
@@ -161,28 +191,12 @@ class Client:
         ).hexdigest()
 
         return (
-            f"{algorithm} Credential={credentials.accessKeyId}/" +
+            f"{algorithm} Credential={credential.accessKeyId}/" +
             f"{credential_scope}, SignedHeaders={signed_headers}, Signature=" +
             signature
         )
 
-    def clear_mixture_cookies(self):
-        self.__session.cookie_jar.clear_domain("mixture.com")
-
-    def clear_streamable_cookies(self):
-        self.__session.cookie_jar.clear_domain("streamable.com")
-
-    def clear_streamja_cookies(self):
-        self.__session.cookie_jar.clear_domain("streamja.com")
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        if not self.__session.closed:
-            await self.__session.close()
-
-    async def generate_mixture_link_id(self):
+    async def __generate_mixture_link_id(self):
         res = await self.__session.get(MIXTURE_URL)
         res.raise_for_status()
 
@@ -204,7 +218,7 @@ class Client:
 
         return link_id
 
-    async def generate_streamable_shortcode(self, filesize: int):
+    async def __generate_streamable_shortcode(self, filesize: int):
         res = await self.__session.get(
             f"{STREAMABLE_API_URL}/{STREAMABLE_GENERATE_SHORTCODE_ENDPOINT}",
             params={
@@ -214,9 +228,9 @@ class Client:
         )
         res.raise_for_status()
 
-        return StreamableUploadCredentials(**(await res.json()))
+        return StreamableUploadCredential(**(await res.json()))
 
-    async def generate_streamff_link(self):
+    async def __generate_streamff_link(self):
         res = await self.__session.post(
             f"{STREAMFF_URL}/{STREAMFF_GENERATE_LINK_ENDPOINT}"
         )
@@ -224,7 +238,7 @@ class Client:
 
         return await res.text()
 
-    async def generate_streamja_short_id(self) -> str:
+    async def __generate_streamja_short_id(self) -> str:
         res = await self.__session.post(
             f"{STREAMJA_URL}/{STREAMJA_GENERATE_SHORT_ID_ENDPOINT}",
             data=FormData(fields=(("new", "1")))
@@ -237,6 +251,65 @@ class Client:
         )
 
         return (await res.json())["shortId"]
+
+    async def __transcode_streamable_video(
+        self,
+        shortcode: str,
+        transcoder_token: str,
+        upload_data: StreamableUploadData,
+    ):
+        return await self.__session.post(
+            "/".join((
+                STREAMABLE_API_URL,
+                STREAMABLE_TRANSCODE_VIDEO_ENDPOINT.format(
+                    shortcode=shortcode,
+                ),
+            )),
+            json={
+                "shortcode": shortcode,
+                "size": upload_data.filesize,
+                "token": transcoder_token,
+                "upload_source": "web",
+                "url": "/".join((
+                    STREAMABLE_AWS_BUCKET_URL,
+                    STREAMABLE_AWS_VIDEO_UPLOAD_ENDPOINT.format(
+                        shortcode=shortcode,
+                    ),
+                )),
+            },
+        )
+
+    async def __update_streamable_upload_metadata(
+        self,
+        shortcode: str,
+        upload_data: StreamableUploadData,
+    ):
+        return await self.__session.put(
+            "/".join((
+                STREAMABLE_API_URL,
+                STREAMABLE_VIDEO_ENDPOINT.format(shortcode=shortcode),
+            )),
+            json={
+                "original_name": upload_data.filename,
+                "original_size": upload_data.filesize,
+                "title": (
+                    Path(upload_data.filename).stem
+                    if upload_data.title is None
+                    else upload_data.title
+                ),
+                "upload_source": "web",
+            },
+            params={"purge": ""},
+        )
+
+    def clear_mixture_cookies(self):
+        self.__session.cookie_jar.clear_domain("mixture.com")
+
+    def clear_streamable_cookies(self):
+        self.__session.cookie_jar.clear_domain("streamable.com")
+
+    def clear_streamja_cookies(self):
+        self.__session.cookie_jar.clear_domain("streamja.com")
 
     async def get_mixture_video_stream(self, video_id: str):
         vid_src = await self.get_mixture_video_url(video_id)
@@ -386,54 +459,6 @@ class Client:
 
         return tag is None
 
-    async def transcode_streamable_video(
-        self,
-        filesize: int,
-        upload_creds: StreamableUploadCredentials,
-    ):
-        return await self.__session.post(
-            "/".join((
-                STREAMABLE_API_URL,
-                STREAMABLE_TRANSCODE_VIDEO_ENDPOINT.format(
-                    shortcode=upload_creds.shortcode,
-                ),
-            )),
-            json={
-                "shortcode": upload_creds.shortcode,
-                "size": filesize,
-                "token": upload_creds.transcoder_options.token,
-                "upload_source": "web",
-                "url": "/".join((
-                    STREAMABLE_AWS_BUCKET_URL,
-                    STREAMABLE_AWS_VIDEO_UPLOAD_ENDPOINT.format(
-                        shortcode=upload_creds.shortcode,
-                    ),
-                )),
-            },
-        )
-
-    async def update_streamable_upload_metadata(
-        self,
-        metadata: StreamableUploadMetadata,
-    ):
-        return await self.__session.put(
-            "/".join((
-                STREAMABLE_API_URL,
-                STREAMABLE_VIDEO_ENDPOINT.format(shortcode=metadata.shortcode),
-            )),
-            json={
-                "original_name": metadata.filename,
-                "original_size": metadata.filesize,
-                "title": (
-                    Path(metadata.filename).stem
-                    if metadata.title is None
-                    else metadata.title
-                ),
-                "upload_source": "web",
-            },
-            params={"purge": ""},
-        )
-
     async def upload_to_juststreamlive(self,
                                        upload_data: JustStreamLiveUploadData):
         assert upload_data.filename.endswith(".mp4"), \
@@ -460,7 +485,7 @@ class Client:
         res_json = await res.json()
         res.release()
 
-        return JustStreamLiveSuccessfulUploadData(**res_json)
+        return JustStreamLiveVideo(**res_json)
 
     async def upload_to_mixture(self, upload_data: MixtureUploadData):
         assert upload_data.filename.endswith(".mp4"), \
@@ -470,6 +495,8 @@ class Client:
             "Mixture supports " + \
             f"{MIXTURE_UPLOAD_MAX_SIZE / 0x100000}MB maximum!"
 
+        link_id = await self.__generate_mixture_link_id()
+
         form_data = FormData()
         form_data.add_field(
             "upload_file",
@@ -477,7 +504,7 @@ class Client:
             content_type=guess_type(upload_data.filename)[0],
             filename=upload_data.filename,
         )
-        form_data.add_field("link_id", upload_data.link_id)
+        form_data.add_field("link_id", link_id)
 
         res = await self.__session.post(
             f"{MIXTURE_URL}/{MIXTURE_UPLOAD_ENDPOINT}",
@@ -485,14 +512,19 @@ class Client:
         )
         res.raise_for_status()
 
-        return MixtureSuccessfulUploadData(link_id=upload_data.link_id)
+        return MixtureVideo(link_id=upload_data.link_id)
 
-    async def upload_to_streamable(
-        self,
-        stream: BufferedReader | BytesIO | StreamReader,
-        upload_creds: StreamableUploadCredentials,
-        upload_region: str = "us-east-1",
-    ):
+    async def upload_to_streamable(self, upload_data: StreamableUploadData):
+        upload_creds = await self.__generate_streamable_shortcode(
+            upload_data.filesize,
+        )
+
+        res = await self.__update_streamable_upload_metadata(
+            upload_creds.shortcode,
+            upload_data,
+        )
+        res.raise_for_status()
+
         req_datetime = datetime.now(tz=timezone.utc)
 
         headers = {
@@ -504,17 +536,17 @@ class Client:
             "X-AMZ-Date": req_datetime.strftime("%Y%m%dT%H%M%SZ"),
         }
 
-        if isinstance(stream, (BufferedReader, BytesIO)):
+        if isinstance(upload_data.stream, (BufferedReader, BytesIO)):
             hash = sha256()
-            stream.seek(0, SEEK_SET)
+            upload_data.stream.seek(0, SEEK_SET)
 
-            while (len(chunk := stream.read(4096)) > 0):
+            while (len(chunk := upload_data.stream.read(4096)) > 0):
                 if len(chunk) > 4096:
-                    raise Exception("Got more data than expected!")
+                    raise IOError("Got more data than expected!")
 
                 hash.update(chunk)
 
-            stream.seek(0, SEEK_SET)
+            upload_data.stream.seek(0, SEEK_SET)
             headers.update({"X-AMZ-Content-SHA256": hash.hexdigest()})
 
         headers.update({
@@ -524,24 +556,36 @@ class Client:
                 req_datetime,
                 upload_creds.credentials,
                 f"/upload/{upload_creds.shortcode}",
-                "",
-                upload_region,
+                {},
+                upload_data.upload_region,
                 service="s3",
             ),
         })
 
-        return await self.__session.put(
+        res = await self.__session.put(
             "/".join((
                 STREAMABLE_AWS_BUCKET_URL,
                 STREAMABLE_AWS_VIDEO_UPLOAD_ENDPOINT.format(
                     shortcode=upload_creds.shortcode,
                 ),
             )),
-            data=stream,
+            data=upload_data.stream,
             headers=headers,
         )
+        res.raise_for_status()
+
+        res = await self.__transcode_streamable_video(
+            upload_creds.shortcode,
+            upload_creds.transcoder_options.token,
+            upload_data,
+        )
+        res.raise_for_status()
+
+        return StreamableVideo(shortcode=upload_creds.shortcode)
 
     async def upload_to_streamff(self, upload_data: StreamffUploadData):
+        video_id = await self.__generate_streamff_link()
+
         assert upload_data.filename.endswith(".mp4"), \
             "Streamff supports MP4 files only!"
 
@@ -555,14 +599,16 @@ class Client:
                             filename=upload_data.filename)
 
         res = await self.__session.post(
-            f"{STREAMFF_URL}/api/videos/upload/{upload_data.id}",
+            f"{STREAMFF_URL}/api/videos/upload/{video_id}",
             data=form_data,
         )
         res.raise_for_status()
 
-        return StreamffSuccessfulUploadData(id=upload_data.id)
+        return StreamffVideo(id=video_id)
 
     async def upload_to_streamja(self, upload_data: StreamjaUploadData):
+        short_id = await self.__generate_streamja_short_id()
+
         assert upload_data.filename.endswith(".mp4"), \
             "Streamja supports MP4 files only!"
 
@@ -578,13 +624,12 @@ class Client:
         res = await self.__session.post(
             f"{STREAMJA_URL}/{STREAMJA_UPLOAD_ENDPOINT}",
             data=form_data,
-            params={"shortId": upload_data.short_id},
+            params={"shortId": short_id},
         )
         res.raise_for_status()
 
         assert (await res.json())["status"] == 1, (
-            "Error occurred while uploading to Streamja short ID " +
-            upload_data.short_id
+            f"Error occurred while uploading to Streamja short ID {short_id}"
         )
 
-        return StreamjaSuccessfulUploadData(short_id=upload_data.short_id)
+        return StreamjaVideo(short_id=short_id)

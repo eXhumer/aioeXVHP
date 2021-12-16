@@ -18,7 +18,13 @@ from typing import Optional, Union
 from pydantic import BaseModel, HttpUrl, validator
 from aiohttp import StreamReader
 
-from . import JUSTSTREAMLIVE_URL, MIXTURE_URL, STREAMFF_URL, STREAMJA_URL
+from . import (
+    JUSTSTREAMLIVE_URL,
+    MIXTURE_URL,
+    STREAMABLE_URL,
+    STREAMFF_URL,
+    STREAMJA_URL,
+)
 
 
 class JustStreamLiveUploadData(BaseModel):
@@ -30,37 +36,7 @@ class JustStreamLiveUploadData(BaseModel):
         arbitrary_types_allowed = True
 
 
-class MixtureUploadData(BaseModel):
-    filename: str
-    filesize: int
-    link_id: str
-    stream: Union[BytesIO, BufferedReader, StreamReader]
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class StreamffUploadData(BaseModel):
-    filename: str
-    filesize: int
-    id: str
-    stream: Union[BytesIO, BufferedReader, StreamReader]
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class StreamjaUploadData(BaseModel):
-    filename: str
-    filesize: int
-    short_id: str
-    stream: Union[BytesIO, BufferedReader, StreamReader]
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class JustStreamLiveSuccessfulUploadData(BaseModel):
+class JustStreamLiveVideo(BaseModel):
     id: str
     url: HttpUrl = None
 
@@ -69,7 +45,16 @@ class JustStreamLiveSuccessfulUploadData(BaseModel):
         return f"{JUSTSTREAMLIVE_URL}/{values['id']}"
 
 
-class MixtureSuccessfulUploadData(BaseModel):
+class MixtureUploadData(BaseModel):
+    filename: str
+    filesize: int
+    stream: Union[BytesIO, BufferedReader, StreamReader]
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class MixtureVideo(BaseModel):
     link_id: str
     url: HttpUrl = None
 
@@ -78,7 +63,52 @@ class MixtureSuccessfulUploadData(BaseModel):
         return f"{MIXTURE_URL}/v/{values['link_id']}"
 
 
-class StreamffSuccessfulUploadData(BaseModel):
+class StreamableAWSCredential(BaseModel):
+    accessKeyId: str
+    secretAccessKey: str
+    sessionToken: str
+
+
+class StreamableTranscoderOptions(BaseModel):
+    token: str
+
+
+class StreamableUploadCredential(BaseModel):
+    shortcode: str
+    credentials: StreamableAWSCredential
+    transcoder_options: StreamableTranscoderOptions
+
+
+class StreamableUploadData(BaseModel):
+    filename: str
+    filesize: int
+    stream: Union[BytesIO, BufferedReader, StreamReader]
+    title: Optional[str] = None
+    upload_region: str = "us-east-1"
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class StreamableVideo(BaseModel):
+    shortcode: str
+    url: HttpUrl = None
+
+    @validator("url", pre=True, always=True)
+    def url_validator(cls, v, values, **kwargs):
+        return f"{STREAMABLE_URL}/{values['short_id']}"
+
+
+class StreamffUploadData(BaseModel):
+    filename: str
+    filesize: int
+    stream: Union[BytesIO, BufferedReader, StreamReader]
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class StreamffVideo(BaseModel):
     id: str
     url: HttpUrl = None
 
@@ -87,7 +117,16 @@ class StreamffSuccessfulUploadData(BaseModel):
         return f"{STREAMFF_URL}/v/{values['id']}"
 
 
-class StreamjaSuccessfulUploadData(BaseModel):
+class StreamjaUploadData(BaseModel):
+    filename: str
+    filesize: int
+    stream: Union[BytesIO, BufferedReader, StreamReader]
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class StreamjaVideo(BaseModel):
     short_id: str
     url: HttpUrl = None
     embed_url: HttpUrl = None
@@ -99,26 +138,3 @@ class StreamjaSuccessfulUploadData(BaseModel):
     @validator("embed_url", pre=True, always=True)
     def embed_url_validator(cls, v, values, **kwargs):
         return f"{STREAMJA_URL}/embed/{values['short_id']}"
-
-
-class StreamableAWSUploadCredentials(BaseModel):
-    accessKeyId: str
-    secretAccessKey: str
-    sessionToken: str
-
-
-class StreamableTranscoderOptions(BaseModel):
-    token: str
-
-
-class StreamableUploadCredentials(BaseModel):
-    shortcode: str
-    credentials: StreamableAWSUploadCredentials
-    transcoder_options: StreamableTranscoderOptions
-
-
-class StreamableUploadMetadata(BaseModel):
-    shortcode: str
-    filename: str
-    filesize: str
-    title: Optional[str] = None
